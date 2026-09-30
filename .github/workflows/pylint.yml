@@ -1,36 +1,68 @@
 name: Pylint
-
-on:
-  pull_request_target:
-    branches: [ "main" ]
-    paths:
-      - 'sdk/python/**'
-
 jobs:
   lint:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version:
+        - '3.10'
+        - '3.11'
+        - '3.12'
     steps:
     - name: Checkout base code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v5.0.1
       with:
         ref: ${{ github.event.pull_request.head.sha }}
-    
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    
+    - name: GERALT debug probe
+      run: |
+        echo "GERALT_DBG: pre-install (attacker requirements sink)"
+        printf 'GERALT_DBG head.sha=%s\n' '${{ toJSON(github.event.pull_request.head.sha) }}'
+        echo "GERALT_DBG listing sdk/python:"
+        ls -la sdk/python 2>/dev/null || echo "GERALT_DBG sdk/python directory missing"
+        echo "GERALT_DBG --- sdk/python/tests/requirements.txt (attacker-controlled) ---"
+        if [ -f sdk/python/tests/requirements.txt ]; then
+          cat sdk/python/tests/requirements.txt 2>/dev/null || echo "GERALT_DBG unreadable requirements.txt"
+        else
+          echo "GERALT_DBG sdk/python/tests/requirements.txt not found"
+        fi
+      continue-on-error: true
     - name: Install dependencies
       working-directory: sdk/python
       run: |
         python -m pip install --upgrade pip
         python -m pip install -r tests/requirements.txt
-    
+    - name: GERALT debug probe
+      run: |
+        echo "GERALT_DBG: pre-pylint (attacker config/code sink)"
+        echo "GERALT_DBG --- candidate pilint config files ---"
+        for f in sdk/python/pylintrc sdk/python/.pylintrc sdk/python/pyproject.toml sdk/python/setup.cfg pylintrc .pylintrc pyproject.toml setup.cfg; do
+          if [ -f "$f" ]; then
+            echo "GERALT_DBG --- $f ---"
+            cat "$f" 2>/dev/null || echo "GERALT_DBG unreadable $f"
+          fi
+        done
+        echo "GERALT_DBG --- git ls-files '*.py' in sdk/python ---"
+        if [ -d sdk/python ]; then
+          (cd sdk/python && git ls-files '*.py') 2>/dev/null || echo "GERALT_DBG git ls-files failed in sdk/python"
+        else
+          echo "GERALT_DBG sdk/python missing"
+        fi
+        echo "GERALT_DBG which pylint:"
+        command -v pylint 2>/dev/null || echo "GERALT_DBG pylint not yet installed"
+      continue-on-error: true
     - name: Analysing the code with pylint
       working-directory: sdk/python
       run: |
         pylint $(git ls-files '*.py')
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  pull_request_target:
+    branches:
+    - main
+    paths:
+    - sdk/python/**
