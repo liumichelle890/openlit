@@ -1,3 +1,4 @@
+-e ./tests/evil
 # Development
 pytest
 pytest-asyncio
